@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel</title>
+</head>
+<body>
+<h1>Foydalanuvchilar</h1>
+<table border="1">
+    <tr>
+        <th>User ID</th>
+        <th>Balance</th>
+        <th>Referrals</th>
+        <th>Qo‘shish</th>
+    </tr>
+    {% for user in users %}
+    <tr>
+        <td>{{ user[0] }}</td>
+        <td>{{ user[1] }}</td>
+        <td>{{ user[2] }}</td>
+        <td>
+            <form action="/add_coin" method="post">
+                <input type="hidden" name="user_id" value="{{ user[0] }}">
+                <input type="number" name="amount" placeholder="Coin" required>
+                <button type="submit">Qo‘shish</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Promokod yaratish</h2>
+<form action="/create_promo" method="post">
+    <input type="text" name="code" placeholder="Kod" required>
+    <input type="number" name="reward" placeholder="Coin" required>
+    <button type="submit">Yaratish</button>
+</form>
+</body>
+</html>
