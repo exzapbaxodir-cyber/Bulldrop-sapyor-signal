@@ -1,141 +1,126 @@
-import logging
 import random
-import sqlite3
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils import executor
+from config import TOKEN, ADMIN_ID
+import database as db
 
-API_TOKEN = "8692829092:AAEzIExDusdb7PpDOy04bTspAFQnsS5v2l8"
-
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# Database
-conn = sqlite3.connect("bot.db")
-cursor = conn.cursor()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    balance INTEGER DEFAULT 0,
-    ref_by INTEGER
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS promocodes (
-    code TEXT PRIMARY KEY,
-    reward INTEGER
-)
-""")
-
-conn.commit()
+# MENU
+menu = ReplyKeyboardMarkup(resize_keyboard=True)
+menu.add("🎮 O'yinlar")
+menu.add("💰 Balans", "👥 Referal")
+menu.add("🎁 Promokod")
 
 
-# Start
+games = ReplyKeyboardMarkup(resize_keyboard=True)
+games.add("Narvon", "Sapyor")
+games.add("Crash", "Gildirak")
+games.add("Minora")
+games.add("⬅️ Orqaga")
+
+
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
     args = message.get_args()
     user_id = message.from_user.id
 
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    user = cursor.fetchone()
+    if args and int(args) != user_id:
+        db.add_user(user_id, int(args))
+        db.update_balance(int(args), 3)
+        db.add_referral(int(args))
+    else:
+        db.add_user(user_id)
 
-    if not user:
-        ref_by = None
-        if args:
-            ref_by = int(args)
-            if ref_by != user_id:
-                cursor.execute("UPDATE users SET balance = balance + 3 WHERE user_id=?", (ref_by,))
-        cursor.execute("INSERT INTO users (user_id, balance, ref_by) VALUES (?, 5, ?)", (user_id, ref_by))
-        conn.commit()
-
-    ref_link = f"https://t.me/{(await bot.get_me()).username}?start={user_id}"
-    await message.answer(f"""
-🎉 Xush kelibsiz!
-
-💰 Boshlang‘ich balans: 5 coin
-👥 Referal link:
-{ref_link}
-
-Maslahat olish uchun o‘yin nomini yozing:
-Narvon / Sapyor / Crash / Gildirak / Minora
-""")
+    await message.answer("🎉 Xush kelibsiz!", reply_markup=menu)
 
 
-# Balans
-@dp.message_handler(commands=['balance'])
+@dp.message_handler(lambda message: message.text == "🎮 O'yinlar")
+async def games_menu(message: types.Message):
+    await message.answer("O'yinni tanlang:", reply_markup=games)
+
+
+@dp.message_handler(lambda message: message.text == "⬅️ Orqaga")
+async def back(message: types.Message):
+    await message.answer("Asosiy menyu", reply_markup=menu)
+
+
+@dp.message_handler(lambda message: message.text == "💰 Balans")
 async def balance(message: types.Message):
-    cursor.execute("SELECT balance FROM users WHERE user_id=?", (message.from_user.id,))
-    bal = cursor.fetchone()[0]
-    await message.answer(f"💰 Sizning balansingiz: {bal} coin")
+    bal = db.get_balance(message.from_user.id)
+    await message.answer(f"💰 Balans: {bal} coin")
 
 
-# O'yin maslahat
-@dp.message_handler(lambda message: message.text.lower() in ['narvon','sapyor','crash','gildirak','minora'])
+@dp.message_handler(lambda message: message.text == "👥 Referal")
+async def ref(message: types.Message):
+    link = f"https://t.me/{(await bot.get_me()).username}?start={message.from_user.id}"
+    await message.answer(f"👥 Referal linkingiz:\n{link}\n\nHar odam uchun 3 coin")
+
+
+@dp.message_handler(lambda message: message.text in ["Narvon","Sapyor","Crash","Gildirak","Minora"])
 async def game_advice(message: types.Message):
     user_id = message.from_user.id
-
-    cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,))
-    bal = cursor.fetchone()[0]
+    bal = db.get_balance(user_id)
 
     if bal < 1:
         await message.answer("❌ Coin yetarli emas")
         return
 
-    cursor.execute("UPDATE users SET balance = balance - 1 WHERE user_id=?", (user_id,))
-    conn.commit()
+    db.update_balance(user_id, -1)
 
-    game = message.text.lower()
-
-    if game == "narvon":
-        advice = f"📊 Qadam: {random.randint(1,7)} pog'onagacha boring"
-    elif game == "sapyor":
-        advice = f"🟩 Xavfsiz katak: {random.randint(1,25)}"
-    elif game == "crash":
-        advice = f"🚀 Chiqish koeff: x{round(random.uniform(1.5,3.5),2)}"
-    elif game == "gildirak":
-        advice = f"🎡 Rang: {random.choice(['Qizil','Yashil','Ko‘k'])}"
-    elif game == "minora":
-        advice = f"🏰 Qavat: {random.randint(1,10)}"
+    if message.text == "Narvon":
+        advice = f"{random.randint(1,7)} pog'onagacha boring"
+    elif message.text == "Sapyor":
+        advice = f"Xavfsiz katak: {random.randint(1,25)}"
+    elif message.text == "Crash":
+        advice = f"x{round(random.uniform(1.5,3.5),2)} da chiqing"
+    elif message.text == "Gildirak":
+        advice = random.choice(["Qizil","Yashil","Ko‘k"])
+    elif message.text == "Minora":
+        advice = f"{random.randint(1,10)} qavatgacha boring"
 
     await message.answer(f"💡 Maslahat:\n{advice}")
 
 
-# Promokod
-@dp.message_handler(commands=['promo'])
-async def promo(message: types.Message):
-    code = message.get_args()
-
-    cursor.execute("SELECT reward FROM promocodes WHERE code=?", (code,))
-    promo = cursor.fetchone()
-
-    if promo:
-        reward = promo[0]
-        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (reward, message.from_user.id))
-        cursor.execute("DELETE FROM promocodes WHERE code=?", (code,))
-        conn.commit()
-        await message.answer(f"🎁 Siz {reward} coin oldingiz!")
-    else:
-        await message.answer("❌ Promokod noto‘g‘ri")
-
-
-# Admin balans qo'shish
 @dp.message_handler(commands=['addcoin'])
 async def addcoin(message: types.Message):
-    ADMIN_ID = 123456789  # admin id
-
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    try:
+    if message.from_user.id == ADMIN_ID:
         user_id, amount = map(int, message.get_args().split())
-        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amount, user_id))
-        conn.commit()
+        db.update_balance(user_id, amount)
         await message.answer("✅ Coin qo‘shildi")
-    except:
-        await message.answer("Format: /addcoin user_id amount")
 
 
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+@dp.message_handler(commands=['createpromo'])
+async def createpromo(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        code, reward = message.get_args().split()
+        db.cursor.execute("INSERT INTO promocodes VALUES (?,?)", (code, reward))
+        db.conn.commit()
+        await message.answer("🎁 Promokod yaratildi")
+
+
+@dp.message_handler(lambda message: message.text == "🎁 Promokod")
+async def promo_info(message: types.Message):
+    await message.answer("Promo kodni kiriting: /promo KOD")
+
+
+@dp.message_handler(commands=['promo'])
+async def usepromo(message: types.Message):
+    code = message.get_args()
+    db.cursor.execute("SELECT reward FROM promocodes WHERE code=?", (code,))
+    data = db.cursor.fetchone()
+
+    if data:
+        db.update_balance(message.from_user.id, int(data[0]))
+        db.cursor.execute("DELETE FROM promocodes WHERE code=?", (code,))
+        db.conn.commit()
+        await message.answer("🎁 Coin qo‘shildi")
+    else:
+        await message.answer("❌ Noto‘g‘ri kod")
+
+
+if __name__ == "__main__":
+    executor.start_polling(dp)
